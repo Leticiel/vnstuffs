@@ -11,7 +11,7 @@ XOR_KEY = 0xC5
 def xor_bytes(data):
     return bytes(b ^ XOR_KEY for b in data)
 
-def extract_archive(path):
+def exPKD(path):
     base = os.path.splitext(os.path.basename(path))[0]
     out_dir = os.path.join(os.path.dirname(path), base)
     os.makedirs(out_dir, exist_ok=True)
@@ -50,7 +50,7 @@ def extract_archive(path):
 
     print("Extracted:", out_dir)
 
-def pack_folder(folder):
+def packPKD(folder):
     folder = os.path.abspath(folder)
     base = os.path.basename(folder.rstrip("/\\"))
     out_path = os.path.join(os.path.dirname(folder), base + ".pkd")
@@ -114,9 +114,9 @@ def main():
         return
 
     if sys.argv[1] == "-e":
-        extract_archive(sys.argv[2])
+        exPKD(sys.argv[2])
     elif sys.argv[1] == "-p":
-        pack_folder(sys.argv[2])
+        packPKD(sys.argv[2])
     else:
         print("    pkd.py -e <input.pkd>")
         print("    pkd.py -p <folder>")
