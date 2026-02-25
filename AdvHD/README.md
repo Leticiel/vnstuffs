@@ -1,1 +1,3 @@
-Only tested with Nightmare x BlackCat ～Tsuioku no Beyond～
+##Tested
+- Nightmare x BlackCat ～Tsuioku no Beyond～<br>
+- Love Love Ochiken Baito Seikatsu
