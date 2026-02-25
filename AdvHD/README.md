@@ -1,1 +1,1 @@
-Only tested with Nightmare×BlackCat ～追憶のビヨンド～
+Only tested with Nightmare x BlackCat ～Tsuioku no Beyond～
