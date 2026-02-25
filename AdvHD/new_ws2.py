@@ -146,8 +146,27 @@ def imWS2(original_path, json_path):
 
     choice_block_start = b"\x00\x0E\x0B\x00"
 
-    total_delta = 0
-    size = len(data)
+    name_list = [
+        e["name"]
+        for e in entries
+        if isinstance(e, dict) and "name" in e
+    ]
+    name_index = 0
+
+    choice_entries = [
+        e for e in entries
+        if isinstance(e, dict) and "choice 1" in e
+    ]
+    choice_index = 0
+
+    jump_positions = [
+        e["jump"]
+        for e in entries
+        if isinstance(e, dict) and "jump" in e
+    ]
+
+    delta_events = []
+
     i = 0
 
     while i < len(data) - 40:
@@ -157,7 +176,8 @@ def imWS2(original_path, json_path):
 
             entry = next(
                 (e for e in entries
-                 if isinstance(e, dict) and e.get("index") == index),
+                 if isinstance(e, dict)
+                 and e.get("index") == index),
                 None
             )
 
@@ -166,14 +186,12 @@ def imWS2(original_path, json_path):
                 continue
 
             start = i + 8
-
             if data[start:start+len(text_start)] != text_start:
                 i += 1
                 continue
 
             str_start = start + len(text_start)
             str_end = data.find(text_end, str_start)
-
             if str_end == -1:
                 i += 1
                 continue
@@ -183,64 +201,53 @@ def imWS2(original_path, json_path):
 
             delta = len(new_bytes) - old_len
             data[str_start:str_start+old_len] = new_bytes
-            total_delta += delta
+
+            if delta != 0:
+                delta_events.append((str_start, delta))
 
             i = str_start + len(new_bytes)
             continue
 
         if data[i:i+4] == opcode_name:
 
-            start = i + 4
+            if name_index >= len(name_list):
+                i += 1
+                continue
 
+            start = i + 4
             if data[start:start+4] != name_marker:
                 i += 1
                 continue
 
             name_start = start + 6
-
             next_text = data.find(opcode_text, name_start)
             if next_text == -1:
                 i += 1
                 continue
 
             old_len = next_text - name_start
-
-            entry = next(
-                (e for e in entries
-                 if isinstance(e, dict)
-                 and "name" in e
-                 and data[name_start:next_text].decode("utf-16le", errors="ignore") in e["name"]),
-                None
-            )
-
-            if not entry:
-                i += 1
-                continue
-
-            new_bytes = entry["name"].encode("utf-16le")
+            new_bytes = name_list[name_index].encode("utf-16le")
 
             delta = len(new_bytes) - old_len
             data[name_start:name_start+old_len] = new_bytes
-            total_delta += delta
 
+            if delta != 0:
+                delta_events.append((name_start, delta))
+
+            name_index += 1
             i = name_start + len(new_bytes)
             continue
 
-        if data[i:i+4] == choice_block_start:
+        if (
+            data[i:i+4] == choice_block_start
+            and choice_index < len(choice_entries)
+        ):
 
+            entry = choice_entries[choice_index]
             ptr = i + 4
+
             choice_count = struct.unpack_from("<H", data, ptr)[0]
             ptr += 2
-
-            entry = next(
-                (e for e in entries
-                 if isinstance(e, dict) and "choice 1" in e),
-                None
-            )
-
-            if not entry:
-                i += 1
-                continue
 
             if data[ptr:ptr+2] == b"\x01\x0F":
 
@@ -265,7 +272,9 @@ def imWS2(original_path, json_path):
 
                     delta = len(new_bytes) - old_len
                     data[ptr:ptr+old_len] = new_bytes
-                    total_delta += delta
+
+                    if delta != 0:
+                        delta_events.append((ptr, delta))
 
                     ptr += len(new_bytes)
                     ptr += 4
@@ -275,6 +284,7 @@ def imWS2(original_path, json_path):
                     ptr += 2
 
                 i = ptr
+                choice_index += 1
                 continue
 
             elif data[ptr:ptr+2] == b"\x01\x01":
@@ -282,6 +292,9 @@ def imWS2(original_path, json_path):
                 ptr += 2
                 ptr += 1
                 ptr += 10
+
+                pointer_pos = ptr
+                old_block2 = struct.unpack_from("<I", data, ptr)[0]
                 ptr += 4
                 ptr += 4
 
@@ -304,7 +317,9 @@ def imWS2(original_path, json_path):
 
                     delta = len(new_bytes) - old_len
                     data[ptr:ptr+old_len] = new_bytes
-                    total_delta += delta
+
+                    if delta != 0:
+                        delta_events.append((ptr, delta))
 
                     ptr += len(new_bytes)
                     ptr += 4
@@ -313,24 +328,33 @@ def imWS2(original_path, json_path):
                         ptr += 2
                     ptr += 2
 
+                shift = sum(d for pos, d in delta_events if pos < pointer_pos)
+                new_block2 = old_block2 + shift
+                struct.pack_into("<I", data, pointer_pos, new_block2)
+
                 i = ptr
+                choice_index += 1
                 continue
 
         i += 1
 
-    jump_entries = [
-        e for e in entries
-        if isinstance(e, dict) and "jump" in e
-    ]
+    sorted_deltas = sorted(delta_events)
 
-    for j in jump_entries:
+    for jump in jump_positions:
 
-        old_jump = j["jump"]
-        new_jump = old_jump + total_delta
+        cumulative = 0
+        for pos, d in sorted_deltas:
+            if pos < jump:
+                cumulative += d
+            else:
+                break
 
-        old_bytes = struct.pack("<I", old_jump)
+        new_jump = jump + cumulative
+
+        old_bytes = struct.pack("<I", jump)
         new_bytes = struct.pack("<I", new_jump)
 
+        found = False
         pos = 0
         while True:
             pos = data.find(old_bytes, pos)
@@ -338,6 +362,10 @@ def imWS2(original_path, json_path):
                 break
             data[pos:pos+4] = new_bytes
             pos += 4
+            found = True
+        if not found:
+            print("Error: Use original ws2 to import")
+            sys.exit(1)
 
     output_path = original_path + ".new"
 
@@ -347,7 +375,6 @@ def imWS2(original_path, json_path):
     print("Created:", output_path)
 
 if __name__ == "__main__":
-
     if len(sys.argv) < 3:
         print("Usage:")
         print("  Extract: -e <input.ws2>")
