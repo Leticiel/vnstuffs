@@ -404,7 +404,6 @@ def imWS2(original_path, json_path):
 
         ptr += 5
 
-        # check float 1.0
         if data[ptr:ptr+4] != b"\x00\x00\x80\x3F":
             i = pos + 1
             continue
