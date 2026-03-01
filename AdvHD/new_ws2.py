@@ -114,7 +114,6 @@ def exWS2(path):
 def imWS2(original_path, json_path):
     with open(original_path, "rb") as f:
         original = f.read()
-
     with open(json_path, "r", encoding="utf-8") as f:
         entries = json.load(f)
 
@@ -130,24 +129,32 @@ def imWS2(original_path, json_path):
     size = len(original)
     patches = []
 
-    i = 0
+    index_map = {
+        e["index"]: e
+        for e in entries
+        if isinstance(e, dict) and "index" in e
+    }
+
+    name_list = [
+        e["name"]
+        for e in entries
+        if isinstance(e, dict) and "name" in e
+    ]
+    name_index = 0
+
     choice_entries = [
         e for e in entries
         if isinstance(e, dict) and "choice 1" in e
     ]
     choice_index = 0
 
+    i = 0
+
     while i < size - 40:
         if original[i:i+4] == opcode_text:
 
             index = struct.unpack_from("<I", original, i + 4)[0]
-
-            entry = next(
-                (e for e in entries
-                 if isinstance(e, dict)
-                 and e.get("index") == index),
-                None
-            )
+            entry = index_map.get(index)
 
             if entry:
 
@@ -175,34 +182,34 @@ def imWS2(original_path, json_path):
 
         if original[i:i+4] == opcode_name:
 
+            if name_index >= len(name_list):
+                i += 1
+                continue
+
             start = i + 4
 
-            if original[start:start+4] == name_marker:
+            if original[start:start+4] != name_marker:
+                i += 1
+                continue
 
-                name_start = start + 6
-                next_text = original.find(opcode_text, name_start)
+            name_start = start + 6
+            next_text = original.find(opcode_text, name_start)
 
-                if next_text != -1:
+            if next_text == -1:
+                i += 1
+                continue
 
-                    entry = next(
-                        (e for e in entries
-                         if isinstance(e, dict)
-                         and "name" in e),
-                        None
-                    )
+            new_bytes = name_list[name_index].encode("utf-16le")
 
-                    if entry:
+            patches.append({
+                "start": name_start,
+                "end": next_text,
+                "new": new_bytes
+            })
 
-                        new_bytes = entry["name"].encode("utf-16le")
-
-                        patches.append({
-                            "start": name_start,
-                            "end": next_text,
-                            "new": new_bytes
-                        })
-
-                        i = next_text
-                        continue
+            name_index += 1
+            i = next_text
+            continue
 
         if (
             original[i:i+4] == choice_block_start
@@ -390,8 +397,6 @@ def imWS2(original_path, json_path):
         struct.pack_into("<I", new_data, pointer2_dup_pos, new_pointer2)
 
         i = pos + 1
-
-    # -------------------------
 
     output_path = original_path + ".new"
 
