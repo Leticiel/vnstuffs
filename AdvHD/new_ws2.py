@@ -13,7 +13,7 @@ def exWS2(path):
     i = 0
 
     opcode_text = struct.pack(">I", 0x14)
-    opcode_name = struct.pack(">I", 0x15)
+    opcode_name = struct.pack(">H", 0x15)
 
     text_start = ("char" + "\x00").encode("utf-16le")
     text_end = "%K".encode("utf-16le")
@@ -43,7 +43,7 @@ def exWS2(path):
                 pos_name = data.rfind(opcode_name, 0, i)
 
                 if pos_name != -1:
-                    lf_start = pos_name + 4
+                    lf_start = pos_name + 2
                     if data[lf_start:lf_start+4] == name_marker:
                         name_start = lf_start + 6
                         name = data[name_start:i].decode(
@@ -118,7 +118,7 @@ def imWS2(original_path, json_path):
         entries = json.load(f)
 
     opcode_text = struct.pack(">I", 0x14)
-    opcode_name = struct.pack(">I", 0x15)
+    opcode_name = struct.pack(">H", 0x15)
 
     text_start = ("char" + "\x00").encode("utf-16le")
     text_end = "%K".encode("utf-16le")
@@ -180,13 +180,13 @@ def imWS2(original_path, json_path):
                         i = str_end
                         continue
 
-        if original[i:i+4] == opcode_name:
+        if original[i:i+2] == opcode_name:
 
             if name_index >= len(name_list):
                 i += 1
                 continue
 
-            start = i + 4
+            start = i + 2
 
             if original[start:start+4] != name_marker:
                 i += 1
