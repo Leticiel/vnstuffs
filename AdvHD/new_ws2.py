@@ -13,7 +13,7 @@ def exWS2(path):
     i = 0
 
     opcode_text = struct.pack(">I", 0x14)
-    opcode_name = struct.pack(">H", 0x15)
+    opcode_names = (b"\x00\x15", b"\x01\x15")
 
     text_start = ("char" + "\x00").encode("utf-16le")
     text_end = "%K".encode("utf-16le")
@@ -40,7 +40,12 @@ def exWS2(path):
                 ).replace("\\n", "\n")
 
                 name = None
-                pos_name = data.rfind(opcode_name, 0, i)
+                pos_name = -1
+                
+                for op in opcode_names:
+                    p = data.rfind(op, 0, i)
+                    if p > pos_name:
+                        pos_name = p
 
                 if pos_name != -1:
                     lf_start = pos_name + 2
@@ -118,7 +123,7 @@ def imWS2(original_path, json_path):
         entries = json.load(f)
 
     opcode_text = struct.pack(">I", 0x14)
-    opcode_name = struct.pack(">H", 0x15)
+    opcode_names = (b"\x00\x15", b"\x01\x15")
 
     text_start = ("char" + "\x00").encode("utf-16le")
     text_end = "%K".encode("utf-16le")
@@ -180,7 +185,7 @@ def imWS2(original_path, json_path):
                         i = str_end
                         continue
 
-        if original[i:i+2] == opcode_name:
+        if original[i:i+2] in opcode_names:
 
             if name_index >= len(name_list):
                 i += 1
@@ -395,6 +400,45 @@ def imWS2(original_path, json_path):
         struct.pack_into("<I", new_data, pointer1_pos, new_pointer1)
         struct.pack_into("<I", new_data, pointer2_pos, new_pointer2)
         struct.pack_into("<I", new_data, pointer2_dup_pos, new_pointer2)
+
+        i = pos + 1
+
+    evret_sig = b"\x07" + "EVRET".encode("utf-16le")
+
+    i = 0
+
+    while True:
+
+        pos = new_data.find(evret_sig, i)
+        if pos == -1:
+            break
+
+        pointer2_dup_pos = pos - 4
+        old_pointer = struct.unpack_from("<I", new_data, pointer2_dup_pos)[0]
+
+        ptr = pointer2_dup_pos - 4
+
+        if new_data[ptr:ptr+4] != b"\x00\x00\x00\x00":
+            i = pos + 1
+            continue
+
+        ptr -= 4
+        if new_data[ptr:ptr+4] != b"\x00\x00\x80\x3F":
+            i = pos + 1
+            continue
+
+        ptr -= 4
+        if new_data[ptr:ptr+4] != b"\x01\x82\x6E\x00":
+            i = pos + 1
+            continue
+
+        pointer1_pos = ptr - 4
+        old_pointer1 = struct.unpack_from("<I", new_data, pointer1_pos)[0]
+
+        new_pointer = map_offset(old_pointer1)
+
+        struct.pack_into("<I", new_data, pointer1_pos, new_pointer)
+        struct.pack_into("<I", new_data, pointer2_dup_pos, new_pointer)
 
         i = pos + 1
 
